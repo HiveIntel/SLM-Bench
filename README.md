@@ -161,5 +161,5 @@ This project is licensed under the MIT License
 
 ## Links
 
-- [SLM-Bench Source Code]((https://github.com/HiveIntel/SLM-Bench))
-- [SLM-Bench Leaderboard]((https://swarm.hiveintel.ai/leaderboard/))
+- [SLM-Bench Source Code](https://github.com/HiveIntel/SLM-Bench)
+- [SLM-Bench Leaderboard](https://swarm.hiveintel.ai/leaderboard/)
