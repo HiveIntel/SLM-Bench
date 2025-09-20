@@ -157,9 +157,9 @@ python run_benchmark.py --model gpt-neo-1.3b --dataset boolq --task qa
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License 
 
 ## Links
 
-- [SLM-Bench Source Code](https://anonymous.4open.science/r/slm-bench-experiments-87F6)
-- [SLM-Bench Leaderboard](https://slm-bench.github.io/leaderboard)
+- [SLM-Bench Source Code]((https://github.com/HiveIntel/SLM-Bench))
+- [SLM-Bench Leaderboard]((https://swarm.hiveintel.ai/leaderboard/))
