@@ -21,7 +21,7 @@ import torch
 import gc
 from contextlib import nullcontext
 from time import sleep
-from energy import EnergyMeter, phase_metrics
+from energy import EnergyMeter, footprint, phase_metrics
 
 logging.basicConfig(
     level=logging.INFO,
@@ -254,6 +254,9 @@ class ExperimentManager:
         seed: int = 42,
         measure_energy: bool = True,
         idle_seconds: float = 10.0,
+        carbon_intensity: float = 480.0,
+        electricity_price: float = 0.15,
+        results_dir: str = "experiment_results",
     ):
         self.email = email
         self.train_samples = train_samples
@@ -264,7 +267,10 @@ class ExperimentManager:
         self.seed = seed
         self.energy_meter = EnergyMeter.create() if measure_energy else None
         self.idle_seconds = idle_seconds
-        self.results_dir = "experiment_results"
+        self.carbon_intensity = carbon_intensity
+        self.electricity_price = electricity_price
+        self.footprint_totals = footprint(0.0, carbon_intensity, electricity_price)
+        self.results_dir = results_dir
         os.makedirs(self.results_dir, exist_ok=True)
         self.failed_experiments = []
         self.successful_experiments = []
@@ -513,6 +519,25 @@ class ExperimentManager:
                     ),
                     "eval": phase_metrics(eval_energy, idle_power_w, eval_tokens),
                 }
+                # CO2 and cost of the energy this experiment added (net of the
+                # idle baseline), or of everything measured without a baseline
+                basis = "net_energy_j" if idle_power_w is not None else "total_energy_j"
+                for phase in ("train", "eval"):
+                    energy[phase].update(
+                        footprint(energy[phase][basis], self.carbon_intensity, self.electricity_price)
+                    )
+                energy["experiment"] = footprint(
+                    energy["train"][basis] + energy["eval"][basis],
+                    self.carbon_intensity,
+                    self.electricity_price,
+                )
+                energy.update(
+                    footprint_basis=basis.split("_")[0],
+                    carbon_intensity_g_per_kwh=self.carbon_intensity,
+                    electricity_price_usd_per_kwh=self.electricity_price,
+                )
+                for key, value in energy["experiment"].items():
+                    self.footprint_totals[key] += value
                 for phase in ("train", "eval"):
                     if energy[phase]["duration_s"] < 5:
                         logging.warning(
@@ -555,6 +580,12 @@ class ExperimentManager:
                         f"of {e['total_energy_j']:.1f} J, {e['net_avg_power_w']:.1f} W net avg, "
                         + (f"{j_per_token * 1000:.3f} mJ/token" if j_per_token else "no tokens")
                     )
+            if energy:
+                fp = energy["experiment"]
+                logging.info(
+                    f"  footprint ({energy['footprint_basis']}): {fp['energy_kwh'] * 1000:.3f} Wh, "
+                    f"{fp['co2_kg'] * 1000:.3f} g CO2, ${fp['cost_usd']:.5f}"
+                )
             self.successful_experiments.append(experiment_name)
             return True
 
@@ -590,6 +621,13 @@ class ExperimentManager:
             f"Done: {len(self.successful_experiments)} succeeded, "
             f"{len(self.failed_experiments)} failed"
         )
+        if self.energy_meter:
+            t = self.footprint_totals
+            logging.info(
+                f"Total footprint: {t['energy_kwh'] * 1000:.3f} Wh, "
+                f"{t['co2_kg'] * 1000:.3f} g CO2, ${t['cost_usd']:.5f} "
+                f"(at {self.carbon_intensity:g} gCO2/kWh, ${self.electricity_price:g}/kWh)"
+            )
 
     def send_progress_email(
         self, completed: int, total: int, start_time: datetime.datetime
@@ -672,6 +710,23 @@ def main():
         default=10.0,
         help="Idle baseline window before each experiment (0 = no baseline subtraction)",
     )
+    parser.add_argument(
+        "--carbon-intensity",
+        type=float,
+        default=480.0,
+        help="Grid carbon intensity in gCO2/kWh for CO2 estimates (default: world average)",
+    )
+    parser.add_argument(
+        "--electricity-price",
+        type=float,
+        default=0.15,
+        help="Electricity price in USD/kWh for cost estimates",
+    )
+    parser.add_argument(
+        "--results-dir",
+        default="experiment_results",
+        help="Where to write results JSON files and trainer output",
+    )
     args = parser.parse_args()
 
     if args.gpu_memory_fraction and torch.cuda.is_available():
@@ -687,6 +742,9 @@ def main():
         seed=args.seed,
         measure_energy=not args.no_energy,
         idle_seconds=args.idle_seconds,
+        carbon_intensity=args.carbon_intensity,
+        electricity_price=args.electricity_price,
+        results_dir=args.results_dir,
     )
     manager.select(args.models, args.datasets)
     manager.run_all_experiments()

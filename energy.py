@@ -180,3 +180,13 @@ def phase_metrics(report: Dict, idle_power_w: Optional[float], tokens: Optional[
         metrics["net_j_per_token"] = net / tokens if tokens else None
     metrics["total_j_per_token"] = report["total_energy_j"] / tokens if tokens else None
     return metrics
+
+
+def footprint(energy_j: float, carbon_intensity_g_per_kwh: float, price_per_kwh: float) -> Dict:
+    """Convert energy to kWh, CO2 (kg) and electricity cost with fixed factors."""
+    kwh = energy_j / 3.6e6
+    return {
+        "energy_kwh": kwh,
+        "co2_kg": kwh * carbon_intensity_g_per_kwh / 1000.0,
+        "cost_usd": kwh * price_per_kwh,
+    }

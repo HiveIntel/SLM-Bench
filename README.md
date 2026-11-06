@@ -171,9 +171,7 @@ For each model × dataset pair, `train.py` fine-tunes the model as a causal LM o
 - exact match, meaning every answer token is predicted correctly; this equals greedy-decoding exact match
 - training and evaluation runtime
 - peak GPU memory
-- energy for training and for evaluation (see below)
-
-It doesn't yet compute CO2 emissions.
+- energy, CO2 and electricity cost for training and for evaluation (see below)
 
 ### Energy measurement
 
@@ -197,6 +195,17 @@ Caveats:
 - The sensors average over up to about a second, so phases shorter than about 5 s are imprecise; `train.py` logs a warning when that happens. Raise `--eval-samples` or `--train-samples` to get longer phases.
 - For whole-system or wall-plug energy, use an external power meter.
 
+### CO2 and cost
+
+`train.py` converts the measured energy into kWh, CO2 and electricity cost using two fixed factors:
+
+- `--carbon-intensity`: grid carbon intensity in gCO2/kWh. The default of 480 is roughly the world average; use your grid's figure (for example about 360–380 for Germany in recent years).
+- `--electricity-price`: price in USD per kWh. The default of 0.15 is a placeholder; use your own tariff.
+
+Each `train` and `eval` block gets `energy_kwh`, `co2_kg` and `cost_usd`, and `energy.experiment` holds the sum of both. The conversion uses the net energy (idle baseline subtracted), so the figures cover only what the experiment added. With `--idle-seconds 0` it uses the total energy instead. `energy.footprint_basis` records which one was used, and the factors are stored next to it so you can recompute the figures later. The log ends with the total footprint over all experiments.
+
+These figures inherit the scope of the energy measurement (GPU only on DGX Spark) and use an average grid intensity, not the marginal one at the time of the run.
+
 Useful options:
 
 | Option | What it does |
@@ -206,7 +215,10 @@ Useful options:
 | `--batch-size`, `--epochs`, `--seed` | Training settings |
 | `--gpu-memory-fraction` | Caps this process's share of GPU memory on a shared GPU |
 | `--idle-seconds` | Length of the idle baseline window before each experiment (0 turns off baseline subtraction) |
-| `--no-energy` | Skips energy measurement |
+| `--carbon-intensity` | Grid carbon intensity in gCO2/kWh for CO2 estimates (default 480) |
+| `--electricity-price` | Electricity price in USD/kWh for cost estimates (default 0.15) |
+| `--no-energy` | Skips energy, CO2 and cost measurement |
+| `--results-dir` | Where results are written (default `experiment_results`) |
 
 Full fine-tuning keeps FP32 weights and AdamW state, so plan on roughly 16 GB of GPU memory per billion parameters, plus activations. For example, about 18 GB for TinyLlama-1.1B and about 120 GB for the 7B models.
 
