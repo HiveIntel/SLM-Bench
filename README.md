@@ -171,8 +171,31 @@ For each model × dataset pair, `train.py` fine-tunes the model as a causal LM o
 - exact match, meaning every answer token is predicted correctly; this equals greedy-decoding exact match
 - training and evaluation runtime
 - peak GPU memory
+- energy for training and for evaluation (see below)
 
-It doesn't yet take the energy and CO2 measurements described above.
+It doesn't yet compute CO2 emissions.
+
+### Energy measurement
+
+`energy.py` measures energy with no extra dependencies and picks a backend automatically:
+
+| Device | Source | What it covers |
+|--------|--------|----------------|
+| DGX Spark and other NVIDIA GPUs | NVML hardware energy counter | GPU only. CPU, memory and the rest of the system are not included. |
+| Jetson Orin / Xavier, Jetson Nano / TX2 | INA3221 power monitor in sysfs, sampled every 50 ms and integrated | The module input rail (`VDD_IN` / `POM_5V_IN`) when the board has one; otherwise the sum of all rails (e.g. AGX Orin) |
+
+Before each experiment, `train.py` measures the idle power for `--idle-seconds` (10 s by default). The `energy` block in the results JSON then reports, separately for `train` and `eval`:
+
+- `total_energy_j` and `avg_power_w`: everything the sensor saw
+- `net_energy_j` and `net_avg_power_w`: with the idle baseline subtracted
+- `tokens` (non-padding tokens processed) and `net_j_per_token`
+- `scope`, `duration_s` and per-rail energy, so you can check what was measured
+
+Caveats:
+
+- NVML reports the whole GPU, so other processes using it during a run are counted too. Subtracting the baseline removes their steady draw, not their bursts.
+- The sensors average over up to about a second, so phases shorter than about 5 s are imprecise; `train.py` logs a warning when that happens. Raise `--eval-samples` or `--train-samples` to get longer phases.
+- For whole-system or wall-plug energy, use an external power meter.
 
 Useful options:
 
@@ -182,6 +205,8 @@ Useful options:
 | `--max-length` | Maximum tokens per example (long contexts are trimmed from the left) |
 | `--batch-size`, `--epochs`, `--seed` | Training settings |
 | `--gpu-memory-fraction` | Caps this process's share of GPU memory on a shared GPU |
+| `--idle-seconds` | Length of the idle baseline window before each experiment (0 turns off baseline subtraction) |
+| `--no-energy` | Skips energy measurement |
 
 Full fine-tuning keeps FP32 weights and AdamW state, so plan on roughly 16 GB of GPU memory per billion parameters, plus activations. For example, about 18 GB for TinyLlama-1.1B and about 120 GB for the 7B models.
 

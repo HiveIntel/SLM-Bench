@@ -19,7 +19,9 @@ import traceback
 from typing import Callable, Dict, List, Optional, Tuple
 import torch
 import gc
+from contextlib import nullcontext
 from time import sleep
+from energy import EnergyMeter, phase_metrics
 
 logging.basicConfig(
     level=logging.INFO,
@@ -250,6 +252,8 @@ class ExperimentManager:
         batch_size: int = 4,
         epochs: float = 1.0,
         seed: int = 42,
+        measure_energy: bool = True,
+        idle_seconds: float = 10.0,
     ):
         self.email = email
         self.train_samples = train_samples
@@ -258,6 +262,8 @@ class ExperimentManager:
         self.batch_size = batch_size
         self.epochs = epochs
         self.seed = seed
+        self.energy_meter = EnergyMeter.create() if measure_energy else None
+        self.idle_seconds = idle_seconds
         self.results_dir = "experiment_results"
         os.makedirs(self.results_dir, exist_ok=True)
         self.failed_experiments = []
@@ -451,7 +457,8 @@ class ExperimentManager:
             # Training arguments
             training_args = TrainingArguments(
                 output_dir=f"{self.results_dir}/{experiment_name}",
-                eval_strategy="epoch",
+                # Evaluate once after training, so training energy excludes eval
+                eval_strategy="no",
                 learning_rate=2e-5,
                 per_device_train_batch_size=self.batch_size,
                 per_device_eval_batch_size=self.batch_size,
@@ -463,6 +470,7 @@ class ExperimentManager:
                 save_strategy="no",  # Don't save checkpoints to save space
                 report_to="none",
                 seed=self.seed,
+                include_num_input_tokens_seen="non_padding",  # for J/token
             )
 
             # Initialize trainer
@@ -477,10 +485,41 @@ class ExperimentManager:
                 preprocess_logits_for_metrics=self.preprocess_logits_for_metrics,
             )
 
+            # Idle baseline right before the workload, so background draw
+            # (including other processes on a shared GPU) is subtracted out
+            meter = self.energy_meter
+            idle_power_w = (
+                meter.idle_power(self.idle_seconds)
+                if meter and self.idle_seconds > 0
+                else None
+            )
+
             # Training
-            train_results = trainer.train()
-            eval_results = trainer.evaluate()
+            with meter or nullcontext():
+                train_results = trainer.train()
+            train_energy = meter.report() if meter else None
+            with meter or nullcontext():
+                eval_results = trainer.evaluate()
+            eval_energy = meter.report() if meter else None
             eval_results["eval_perplexity"] = math.exp(min(eval_results["eval_loss"], 50))
+
+            energy = None
+            if meter:
+                eval_tokens = sum(len(ids) for ids in tokenized_val["input_ids"])
+                energy = {
+                    "idle_power_w": idle_power_w,
+                    "train": phase_metrics(
+                        train_energy, idle_power_w, trainer.state.num_input_tokens_seen
+                    ),
+                    "eval": phase_metrics(eval_energy, idle_power_w, eval_tokens),
+                }
+                for phase in ("train", "eval"):
+                    if energy[phase]["duration_s"] < 5:
+                        logging.warning(
+                            f"{experiment_name} {phase} took {energy[phase]['duration_s']:.1f}s; "
+                            "energy for phases under ~5s is imprecise "
+                            "(raise --eval-samples / --train-samples)"
+                        )
 
             # Save results
             results = {
@@ -495,6 +534,7 @@ class ExperimentManager:
                 "peak_gpu_memory_gb": (
                     torch.cuda.max_memory_allocated() / 1e9 if use_cuda else None
                 ),
+                "energy": energy,
                 "timestamp": datetime.datetime.now().isoformat(),
             }
 
@@ -506,6 +546,15 @@ class ExperimentManager:
                 f"token_accuracy={eval_results['eval_token_accuracy']:.4f} "
                 f"exact_match={eval_results['eval_exact_match']:.4f}"
             )
+            if energy and idle_power_w is not None:
+                for phase in ("train", "eval"):
+                    e = energy[phase]
+                    j_per_token = e["net_j_per_token"]
+                    logging.info(
+                        f"  {phase} energy ({e['scope']}): {e['net_energy_j']:.1f} J net "
+                        f"of {e['total_energy_j']:.1f} J, {e['net_avg_power_w']:.1f} W net avg, "
+                        + (f"{j_per_token * 1000:.3f} mJ/token" if j_per_token else "no tokens")
+                    )
             self.successful_experiments.append(experiment_name)
             return True
 
@@ -614,6 +663,15 @@ def main():
         default=None,
         help="Cap this process's share of GPU memory (useful on shared GPUs)",
     )
+    parser.add_argument(
+        "--no-energy", action="store_true", help="Skip energy measurement"
+    )
+    parser.add_argument(
+        "--idle-seconds",
+        type=float,
+        default=10.0,
+        help="Idle baseline window before each experiment (0 = no baseline subtraction)",
+    )
     args = parser.parse_args()
 
     if args.gpu_memory_fraction and torch.cuda.is_available():
@@ -627,6 +685,8 @@ def main():
         batch_size=args.batch_size,
         epochs=args.epochs,
         seed=args.seed,
+        measure_energy=not args.no_energy,
+        idle_seconds=args.idle_seconds,
     )
     manager.select(args.models, args.datasets)
     manager.run_all_experiments()
