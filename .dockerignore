@@ -1,0 +1,14 @@
+.git
+.gitignore
+.dockerignore
+.env
+.env.*
+experiment_results/
+logs/
+cache/
+experiments.log
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.png

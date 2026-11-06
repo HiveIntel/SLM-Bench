@@ -12,13 +12,13 @@ Recent advancements in Language Models (LMs) have revolutionized NLP application
 
 Despite their growing prominence, a notable gap exists in the systematic evaluation of SLMs. SLM-Bench addresses this gap by providing a comprehensive benchmarking framework for evaluating SLMs with a specific focus on their environmental impacts.
 
-![alt text](https://github.com/slm-bench/slm-bench-experiments/blob/main/intro.png)
+![SLM-Bench overview](intro.png)
 
 ## Key Features
 
-- **Focus on Small Language Models**: Evaluates SLMs (models with less than 7B parameters) that are computationally efficient and accessible to a wider range of users and systems
+- **Focus on Small Language Models**: Evaluates SLMs (models of up to 7B-class size) that are computationally efficient and accessible to a wider range of users and systems
 - **Measurement of Environmental Impacts**: Integrates metrics for energy consumption and CO2 emissions to assess sustainability, an aspect often overlooked in benchmarking
-- **Evaluation Across Diverse Settings**: Rigorously evaluates 12 SLMs on 9 tasks using 23 datasets from 14 domains
+- **Evaluation Across Diverse Settings**: Rigorously evaluates 15 SLMs on 9 tasks using 23 datasets from 14 domains
 
 ## Datasets
 
@@ -50,27 +50,40 @@ SLM-Bench incorporates 23 diverse datasets spanning 14 domains and 9 task types:
 | covid | 19,874 | Healthcare | Sentiment Analysis |
 | drop | 96,567 | Open-domain | Reasoning |
 
+`datasets.json` records where `train.py` loads each dataset from (Hub ID, config and splits) and how it formats examples. Where the original source no longer loads with current `datasets` releases, it uses an equivalent copy:
+
+- PIQA: `baber/piqa`
+- e2e_nlg, viggo: the GEM versions
+- bc5cdr: `tner/bc5cdr`
+- conllpp: the CrossWeigh raw files on GitHub
+- customer_support: `PolyAI/banking77`
+- legal: LexGLUE LEDGAR
+- reuters: `Tellurio/reuters-21578`
+- covid: `argilla/twitter-coronavirus`, the Kaggle Coronavirus Tweets NLP data, using a 90/10 split of its single train split
+
 ## Models
 
-SLM-Bench evaluates 12 SLMs selected based on model size (<7B parameters), popularity, and open-source availability:
+SLM-Bench evaluates 15 SLMs selected based on model size (up to 7B-class), popularity, and open-source availability:
 
 | Model | Provider | #Params (B) | Size (GB) | Year |
 |-------|----------|-------------|-----------|------|
-| GPT-Neo-1.3B | EleutherAI | 1.37 | 2.46 | 03/2021 |
-| Open-LLaMA-3B | OpenLM | 3 | 6.8 | 06/2024 |
-| LLaMA-2-7B | Meta | 6.47 | 13 | 07/2023 |
-| Mistral-7B | Mistral AI | 7 | 13 | 09/2023 |
-| Zephyr-7B | WebPilot.AI | 7 | 13.74 | 11/2023 |
-| Phi-1.5B | Microsoft | 2.7 | 2.45 | 12/2023 |
-| TinyLlama-1.1B | SUTD | 1.1 | 2 | 08/2023 |
-| StableLM-3B | Stability AI | 3 | 6.5 | 12/2023 |
-| ShearedLlama-2.7B | Princeton NLP | 2.7 | 5 | 11/2023 |
-| Dolly-v2-3B | Databricks | 3 | 5.8 | 12/2022 |
-| Gemma-2B | Google | 2 | 4.67 | 11/2023 |
-| Pythia-2.8B | EleutherAI | 2.8 | 5.5 | 02/2023 |
-| Llama-3.2-1B | Meta | 2.8 | 5.5 | 09/2024 |
-| Phi-3-3.8B | Microsoft | 3.82 | 2.2 | 01/2025 |
+| GPT-Neo-1.3B | EleutherAI | 1.32 | 2.63 | 03/2021 |
+| Open-LLaMA-3B | OpenLM Research | 3.43 | 6.85 | 06/2023 |
+| LLaMA-2-7B | Meta | 6.74 | 13.48 | 07/2023 |
+| Mistral-7B | Mistral AI | 7.24 | 14.48 | 09/2023 |
+| Zephyr-7B | Hugging Face H4 | 7.24 | 14.48 | 10/2023 |
+| Phi-1.5 | Microsoft | 1.42 | 2.84 | 09/2023 |
+| TinyLlama-1.1B | SUTD | 1.10 | 2.20 | 12/2023 |
+| StableLM-3B | Stability AI | 2.80 | 5.59 | 09/2023 |
+| ShearedLlama-2.7B | Princeton NLP | 2.70 | 5.40 | 10/2023 |
+| Dolly-v2-3B | Databricks | 2.78 | 5.55 | 04/2023 |
+| Gemma-2B | Google | 2.51 | 5.01 | 02/2024 |
+| Pythia-2.8B | EleutherAI | 2.78 | 5.55 | 02/2023 |
+| Llama-3.2-1B | Meta | 1.24 | 2.47 | 09/2024 |
+| Phi-3-3.8B | Microsoft | 3.82 | 7.64 | 04/2024 |
 | Gemma-3-1B | Google | 1.00 | 2.00 | 03/2025 |
+
+#Params counts trainable parameters; Size is the 16-bit (FP16/BF16) weight footprint, #Params × 2 bytes. Year is the public release month (for TinyLlama, the final 3T-token checkpoint). The first 12 models are configured in `models.json`; Llama-3.2-1B, Phi-3-3.8B and Gemma-3-1B are not yet. Databricks has removed Dolly-v2-3B from the Hugging Face Hub, so that entry currently fails to load.
 
 ## Evaluation Metrics
 
@@ -93,7 +106,7 @@ SLM-Bench employs 11 metrics categorized into three groups:
    - CO2 Emissions (kg)
    - Energy Usage (kWh)
 
-![alt text](https://github.com/slm-bench/slm-bench-experiments/blob/main/result.png)
+![SLM-Bench results](result.png)
 
 ## Benchmarking Pipeline
 
@@ -129,20 +142,111 @@ Based on our findings, we recommend:
 
 ## Installation & Usage
 
+Requires Python 3.12 and an NVIDIA GPU with a driver that supports CUDA 13 (driver 580 or newer). Tested on an NVIDIA GB10 (DGX Spark).
+
 ```bash
 # Clone the repository
-git clone https://github.com/slm-bench/slm-bench.git
-cd slm-bench
+git clone https://github.com/HiveIntel/SLM-Bench.git
+cd SLM-Bench
 
-# Install dependencies
+# Install dependencies (CUDA 13.0 build of PyTorch first)
+python3 -m venv .venv && source .venv/bin/activate
+pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cu130
 pip install -r requirements.txt
 
-# Run the benchmark with default settings
-python run_benchmark.py --all
+# Gated models (LLaMA-2, Gemma) need a Hugging Face token with access granted
+hf auth login
 
-# Run a specific evaluation
-python run_benchmark.py --model gpt-neo-1.3b --dataset boolq --task qa
+# Run every model in models.json against every dataset in datasets.json
+python train.py
+
+# Or pick models and datasets by name
+python train.py --models TinyLlama-1.1 Phi-1.5 --datasets BoolQ ARC-Easy conllpp
 ```
+
+For each model × dataset pair, `train.py` fine-tunes the model as a causal LM on prompt → answer text (100 training examples, 1 epoch by default). It computes the loss on the answer tokens only, then evaluates on 50 held-out examples. Each run writes `experiment_results/<model>_<dataset>_results.json` with:
+
+- eval loss and perplexity
+- answer token accuracy
+- exact match, meaning every answer token is predicted correctly; this equals greedy-decoding exact match
+- training and evaluation runtime
+- peak GPU memory
+- energy, CO2 and electricity cost for training and for evaluation (see below)
+
+### Energy measurement
+
+`energy.py` measures energy with no extra dependencies and picks a backend automatically:
+
+| Device | Source | What it covers |
+|--------|--------|----------------|
+| DGX Spark and other NVIDIA GPUs | NVML hardware energy counter | GPU only. CPU, memory and the rest of the system are not included. |
+| Jetson Orin / Xavier, Jetson Nano / TX2 | INA3221 power monitor in sysfs, sampled every 50 ms and integrated | The module input rail (`VDD_IN` / `POM_5V_IN`) when the board has one; otherwise the sum of all rails (e.g. AGX Orin) |
+
+Before each experiment, `train.py` measures the idle power for `--idle-seconds` (10 s by default). The `energy` block in the results JSON then reports, separately for `train` and `eval`:
+
+- `total_energy_j` and `avg_power_w`: everything the sensor saw
+- `net_energy_j` and `net_avg_power_w`: with the idle baseline subtracted
+- `tokens` (non-padding tokens processed) and `net_j_per_token`
+- `scope`, `duration_s` and per-rail energy, so you can check what was measured
+
+Caveats:
+
+- NVML reports the whole GPU, so other processes using it during a run are counted too. Subtracting the baseline removes their steady draw, not their bursts.
+- The sensors average over up to about a second, so phases shorter than about 5 s are imprecise; `train.py` logs a warning when that happens. Raise `--eval-samples` or `--train-samples` to get longer phases.
+- For whole-system or wall-plug energy, use an external power meter.
+
+### CO2 and cost
+
+`train.py` converts the measured energy into kWh, CO2 and electricity cost using two fixed factors:
+
+- `--carbon-intensity`: grid carbon intensity in gCO2/kWh. The default of 480 is roughly the world average; use your grid's figure (for example about 360–380 for Germany in recent years).
+- `--electricity-price`: price in USD per kWh. The default of 0.15 is a placeholder; use your own tariff.
+
+Each `train` and `eval` block gets `energy_kwh`, `co2_kg` and `cost_usd`, and `energy.experiment` holds the sum of both. The conversion uses the net energy (idle baseline subtracted), so the figures cover only what the experiment added. With `--idle-seconds 0` it uses the total energy instead. `energy.footprint_basis` records which one was used, and the factors are stored next to it so you can recompute the figures later. The log ends with the total footprint over all experiments.
+
+These figures inherit the scope of the energy measurement (GPU only on DGX Spark) and use an average grid intensity, not the marginal one at the time of the run.
+
+Useful options:
+
+| Option | What it does |
+|--------|--------------|
+| `--train-samples`, `--eval-samples` | Number of training and evaluation examples |
+| `--max-length` | Maximum tokens per example (long contexts are trimmed from the left) |
+| `--batch-size`, `--epochs`, `--seed` | Training settings |
+| `--gpu-memory-fraction` | Caps this process's share of GPU memory on a shared GPU |
+| `--idle-seconds` | Length of the idle baseline window before each experiment (0 turns off baseline subtraction) |
+| `--carbon-intensity` | Grid carbon intensity in gCO2/kWh for CO2 estimates (default 480) |
+| `--electricity-price` | Electricity price in USD/kWh for cost estimates (default 0.15) |
+| `--no-energy` | Skips energy, CO2 and cost measurement |
+| `--results-dir` | Where results are written (default `experiment_results`) |
+
+Full fine-tuning keeps FP32 weights and AdamW state, so plan on roughly 16 GB of GPU memory per billion parameters, plus activations. For example, about 18 GB for TinyLlama-1.1B and about 120 GB for the 7B models.
+
+### Optional email notifications
+
+Progress and final-report emails are off by default. To turn them on, pass `--email` and provide SMTP credentials through the environment (never commit them):
+
+```bash
+export SMTP_USER="sender@example.com"
+export SMTP_PASSWORD="your-app-password"
+# Optional, defaults shown
+export SMTP_SERVER="smtp.gmail.com"
+export SMTP_PORT="587"
+
+python train.py --email you@example.com
+```
+
+### Docker
+
+```bash
+docker build -t slm-bench .
+docker run --gpus all -e HF_TOKEN \
+  -v "$PWD/experiment_results:/app/experiment_results" \
+  -v "$PWD/cache:/app/cache" \
+  slm-bench
+```
+
+The container runs as an unprivileged user (UID 1000), so mounted host directories must be writable by that UID. The image installs the CUDA 13.0 build of PyTorch, builds on both x86_64 and arm64 hosts, and needs the NVIDIA Container Toolkit for `--gpus`.
 
 ## Citation
 
