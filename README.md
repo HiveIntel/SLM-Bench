@@ -50,6 +50,17 @@ SLM-Bench incorporates 23 diverse datasets spanning 14 domains and 9 task types:
 | covid | 19,874 | Healthcare | Sentiment Analysis |
 | drop | 96,567 | Open-domain | Reasoning |
 
+`datasets.json` records where `train.py` loads each dataset from (Hub ID, config and splits) and how it formats examples. Where the original source no longer loads with current `datasets` releases, it uses an equivalent copy:
+
+- PIQA: `baber/piqa`
+- e2e_nlg, viggo: the GEM versions
+- bc5cdr: `tner/bc5cdr`
+- conllpp: the CrossWeigh raw files on GitHub
+- customer_support: `PolyAI/banking77`
+- legal: LexGLUE LEDGAR
+- reuters: `Tellurio/reuters-21578`
+- covid: `argilla/twitter-coronavirus`, the Kaggle Coronavirus Tweets NLP data, using a 90/10 split of its single train split
+
 ## Models
 
 SLM-Bench evaluates 15 SLMs selected based on model size (up to 7B-class), popularity, and open-source availability:
@@ -72,7 +83,7 @@ SLM-Bench evaluates 15 SLMs selected based on model size (up to 7B-class), popul
 | Phi-3-3.8B | Microsoft | 3.82 | 7.64 | 04/2024 |
 | Gemma-3-1B | Google | 1.00 | 2.00 | 03/2025 |
 
-#Params counts trainable parameters; Size is the 16-bit (FP16/BF16) weight footprint, #Params × 2 bytes. Year is the public release month (for TinyLlama, the final 3T-token checkpoint). The first 12 models are configured in `models.json`; Llama-3.2-1B, Phi-3-3.8B and Gemma-3-1B are not yet.
+#Params counts trainable parameters; Size is the 16-bit (FP16/BF16) weight footprint, #Params × 2 bytes. Year is the public release month (for TinyLlama, the final 3T-token checkpoint). The first 12 models are configured in `models.json`; Llama-3.2-1B, Phi-3-3.8B and Gemma-3-1B are not yet. Databricks has removed Dolly-v2-3B from the Hugging Face Hub, so that entry currently fails to load.
 
 ## Evaluation Metrics
 
@@ -131,24 +142,48 @@ Based on our findings, we recommend:
 
 ## Installation & Usage
 
-Requires Python 3.9+ (3.10 recommended) and a CUDA GPU.
+Requires Python 3.12 and an NVIDIA GPU with a driver that supports CUDA 13 (driver 580 or newer). Tested on an NVIDIA GB10 (DGX Spark).
 
 ```bash
 # Clone the repository
 git clone https://github.com/HiveIntel/SLM-Bench.git
 cd SLM-Bench
 
-# Install dependencies
+# Install dependencies (CUDA 13.0 build of PyTorch first)
+python3 -m venv .venv && source .venv/bin/activate
+pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cu130
 pip install -r requirements.txt
 
 # Gated models (LLaMA-2, Gemma) need a Hugging Face token with access granted
-huggingface-cli login
+hf auth login
 
 # Run every model in models.json against every dataset in datasets.json
 python train.py
+
+# Or pick models and datasets by name
+python train.py --models TinyLlama-1.1 Phi-1.5 --datasets BoolQ ARC-Easy conllpp
 ```
 
-`train.py` currently runs each model × dataset pair as a short extractive-QA fine-tuning run and writes results to `experiment_results/`. It doesn't yet support selecting a single model or dataset, and it doesn't take the energy and CO2 measurements described above.
+For each model × dataset pair, `train.py` fine-tunes the model as a causal LM on prompt → answer text (100 training examples, 1 epoch by default). It computes the loss on the answer tokens only, then evaluates on 50 held-out examples. Each run writes `experiment_results/<model>_<dataset>_results.json` with:
+
+- eval loss and perplexity
+- answer token accuracy
+- exact match, meaning every answer token is predicted correctly; this equals greedy-decoding exact match
+- training and evaluation runtime
+- peak GPU memory
+
+It doesn't yet take the energy and CO2 measurements described above.
+
+Useful options:
+
+| Option | What it does |
+|--------|--------------|
+| `--train-samples`, `--eval-samples` | Number of training and evaluation examples |
+| `--max-length` | Maximum tokens per example (long contexts are trimmed from the left) |
+| `--batch-size`, `--epochs`, `--seed` | Training settings |
+| `--gpu-memory-fraction` | Caps this process's share of GPU memory on a shared GPU |
+
+Full fine-tuning keeps FP32 weights and AdamW state, so plan on roughly 16 GB of GPU memory per billion parameters, plus activations. For example, about 18 GB for TinyLlama-1.1B and about 120 GB for the 7B models.
 
 ### Optional email notifications
 
@@ -174,7 +209,7 @@ docker run --gpus all -e HF_TOKEN \
   slm-bench
 ```
 
-The container runs as an unprivileged user (UID 1000), so mounted host directories must be writable by that UID. The image installs the CUDA 11.8 build of PyTorch and targets x86_64 hosts.
+The container runs as an unprivileged user (UID 1000), so mounted host directories must be writable by that UID. The image installs the CUDA 13.0 build of PyTorch, builds on both x86_64 and arm64 hosts, and needs the NVIDIA Container Toolkit for `--gpus`.
 
 ## Citation
 

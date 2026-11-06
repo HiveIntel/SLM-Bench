@@ -1,15 +1,14 @@
-# Pinned to the last releases train.py runs on unchanged:
-# - transformers 4.46 removed TrainingArguments(evaluation_strategy=) and Trainer(tokenizer=)
-# - datasets 4.0 removed script-based datasets (piqa, e2e_nlg, conllpp, ...)
-numpy==1.26.4
-datasets==2.21.0
-transformers==4.44.2
-evaluate==0.4.3
-tqdm==4.66.5
-torch==2.4.1
-accelerate==0.34.2
-scikit-learn==1.5.2
-pandas==2.2.3
-sentencepiece==0.2.0
-protobuf==4.25.5
-sacremoses==0.1.1
+# Tested with Python 3.12 on an NVIDIA GB10 (CUDA 13 driver).
+# For GPU support install torch from the CUDA 13.0 index first:
+#   pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cu130
+torch==2.14.1
+transformers==5.22.1
+datasets==5.1.0
+accelerate==1.15.0
+huggingface_hub==2.4.0
+tokenizers==0.23.3
+numpy==2.5.4
+tqdm==4.70.1
+# Needed to convert SentencePiece tokenizers (e.g. Open-LLaMA) to fast tokenizers
+sentencepiece==0.2.3
+protobuf==7.36.2
