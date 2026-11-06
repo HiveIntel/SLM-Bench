@@ -1,0 +1,17 @@
+# Experiment outputs
+experiment_results/
+logs/
+experiments.log
+
+# Hugging Face cache (HF_HOME in Docker)
+cache/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local secrets (SMTP_USER / SMTP_PASSWORD, HF_TOKEN)
+.env
+.env.*

@@ -12,13 +12,13 @@ Recent advancements in Language Models (LMs) have revolutionized NLP application
 
 Despite their growing prominence, a notable gap exists in the systematic evaluation of SLMs. SLM-Bench addresses this gap by providing a comprehensive benchmarking framework for evaluating SLMs with a specific focus on their environmental impacts.
 
-![alt text](https://github.com/slm-bench/slm-bench-experiments/blob/main/intro.png)
+![SLM-Bench overview](intro.png)
 
 ## Key Features
 
-- **Focus on Small Language Models**: Evaluates SLMs (models with less than 7B parameters) that are computationally efficient and accessible to a wider range of users and systems
+- **Focus on Small Language Models**: Evaluates SLMs (models of up to 7B-class size) that are computationally efficient and accessible to a wider range of users and systems
 - **Measurement of Environmental Impacts**: Integrates metrics for energy consumption and CO2 emissions to assess sustainability, an aspect often overlooked in benchmarking
-- **Evaluation Across Diverse Settings**: Rigorously evaluates 12 SLMs on 9 tasks using 23 datasets from 14 domains
+- **Evaluation Across Diverse Settings**: Rigorously evaluates 15 SLMs on 9 tasks using 23 datasets from 14 domains
 
 ## Datasets
 
@@ -52,25 +52,27 @@ SLM-Bench incorporates 23 diverse datasets spanning 14 domains and 9 task types:
 
 ## Models
 
-SLM-Bench evaluates 12 SLMs selected based on model size (<7B parameters), popularity, and open-source availability:
+SLM-Bench evaluates 15 SLMs selected based on model size (up to 7B-class), popularity, and open-source availability:
 
 | Model | Provider | #Params (B) | Size (GB) | Year |
 |-------|----------|-------------|-----------|------|
-| GPT-Neo-1.3B | EleutherAI | 1.37 | 2.46 | 03/2021 |
-| Open-LLaMA-3B | OpenLM | 3 | 6.8 | 06/2024 |
-| LLaMA-2-7B | Meta | 6.47 | 13 | 07/2023 |
-| Mistral-7B | Mistral AI | 7 | 13 | 09/2023 |
-| Zephyr-7B | WebPilot.AI | 7 | 13.74 | 11/2023 |
-| Phi-1.5B | Microsoft | 2.7 | 2.45 | 12/2023 |
-| TinyLlama-1.1B | SUTD | 1.1 | 2 | 08/2023 |
-| StableLM-3B | Stability AI | 3 | 6.5 | 12/2023 |
-| ShearedLlama-2.7B | Princeton NLP | 2.7 | 5 | 11/2023 |
-| Dolly-v2-3B | Databricks | 3 | 5.8 | 12/2022 |
-| Gemma-2B | Google | 2 | 4.67 | 11/2023 |
-| Pythia-2.8B | EleutherAI | 2.8 | 5.5 | 02/2023 |
-| Llama-3.2-1B | Meta | 2.8 | 5.5 | 09/2024 |
-| Phi-3-3.8B | Microsoft | 3.82 | 2.2 | 01/2025 |
+| GPT-Neo-1.3B | EleutherAI | 1.32 | 2.63 | 03/2021 |
+| Open-LLaMA-3B | OpenLM Research | 3.43 | 6.85 | 06/2023 |
+| LLaMA-2-7B | Meta | 6.74 | 13.48 | 07/2023 |
+| Mistral-7B | Mistral AI | 7.24 | 14.48 | 09/2023 |
+| Zephyr-7B | Hugging Face H4 | 7.24 | 14.48 | 10/2023 |
+| Phi-1.5 | Microsoft | 1.42 | 2.84 | 09/2023 |
+| TinyLlama-1.1B | SUTD | 1.10 | 2.20 | 12/2023 |
+| StableLM-3B | Stability AI | 2.80 | 5.59 | 09/2023 |
+| ShearedLlama-2.7B | Princeton NLP | 2.70 | 5.40 | 10/2023 |
+| Dolly-v2-3B | Databricks | 2.78 | 5.55 | 04/2023 |
+| Gemma-2B | Google | 2.51 | 5.01 | 02/2024 |
+| Pythia-2.8B | EleutherAI | 2.78 | 5.55 | 02/2023 |
+| Llama-3.2-1B | Meta | 1.24 | 2.47 | 09/2024 |
+| Phi-3-3.8B | Microsoft | 3.82 | 7.64 | 04/2024 |
 | Gemma-3-1B | Google | 1.00 | 2.00 | 03/2025 |
+
+#Params counts trainable parameters; Size is the 16-bit (FP16/BF16) weight footprint, #Params × 2 bytes. Year is the public release month (for TinyLlama, the final 3T-token checkpoint). The first 12 models are configured in `models.json`; Llama-3.2-1B, Phi-3-3.8B and Gemma-3-1B are not yet.
 
 ## Evaluation Metrics
 
@@ -93,7 +95,7 @@ SLM-Bench employs 11 metrics categorized into three groups:
    - CO2 Emissions (kg)
    - Energy Usage (kWh)
 
-![alt text](https://github.com/slm-bench/slm-bench-experiments/blob/main/result.png)
+![SLM-Bench results](result.png)
 
 ## Benchmarking Pipeline
 
@@ -129,20 +131,50 @@ Based on our findings, we recommend:
 
 ## Installation & Usage
 
+Requires Python 3.9+ (3.10 recommended) and a CUDA GPU.
+
 ```bash
 # Clone the repository
-git clone https://github.com/slm-bench/slm-bench.git
-cd slm-bench
+git clone https://github.com/HiveIntel/SLM-Bench.git
+cd SLM-Bench
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the benchmark with default settings
-python run_benchmark.py --all
+# Gated models (LLaMA-2, Gemma) need a Hugging Face token with access granted
+huggingface-cli login
 
-# Run a specific evaluation
-python run_benchmark.py --model gpt-neo-1.3b --dataset boolq --task qa
+# Run every model in models.json against every dataset in datasets.json
+python train.py
 ```
+
+`train.py` currently runs each model × dataset pair as a short extractive-QA fine-tuning run and writes results to `experiment_results/`. It doesn't yet support selecting a single model or dataset, and it doesn't take the energy and CO2 measurements described above.
+
+### Optional email notifications
+
+Progress and final-report emails are off by default. To turn them on, pass `--email` and provide SMTP credentials through the environment (never commit them):
+
+```bash
+export SMTP_USER="sender@example.com"
+export SMTP_PASSWORD="your-app-password"
+# Optional, defaults shown
+export SMTP_SERVER="smtp.gmail.com"
+export SMTP_PORT="587"
+
+python train.py --email you@example.com
+```
+
+### Docker
+
+```bash
+docker build -t slm-bench .
+docker run --gpus all -e HF_TOKEN \
+  -v "$PWD/experiment_results:/app/experiment_results" \
+  -v "$PWD/cache:/app/cache" \
+  slm-bench
+```
+
+The container runs as an unprivileged user (UID 1000), so mounted host directories must be writable by that UID. The image installs the CUDA 11.8 build of PyTorch and targets x86_64 hosts.
 
 ## Citation
 

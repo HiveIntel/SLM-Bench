@@ -16,7 +16,7 @@ import json
 import os
 import logging
 import traceback
-from typing import Dict, List
+from typing import Dict, List, Optional
 import torch
 import gc
 from time import sleep
@@ -29,7 +29,7 @@ logging.basicConfig(
 
 
 class ExperimentManager:
-    def __init__(self, email: str):
+    def __init__(self, email: Optional[str] = None):
         self.email = email
         self.results_dir = "experiment_results"
         os.makedirs(self.results_dir, exist_ok=True)
@@ -54,10 +54,21 @@ class ExperimentManager:
         sleep(5)  # Give system time to free resources
 
     def send_email(self, subject: str, content: str):
-        smtp_server = "smtp.gmail.com"
-        smtp_port = 587
-        sender_email = "nghiemptce160353@fpt.edu.vn"
-        sender_password = "tfjdtvwrdlrqqlzy"
+        # Email notifications are opt-in: they need --email plus SMTP credentials
+        # supplied through the environment (never hardcode them here).
+        if not self.email:
+            return
+
+        smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+        smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+        sender_email = os.environ.get("SMTP_USER")
+        sender_password = os.environ.get("SMTP_PASSWORD")
+
+        if not sender_email or not sender_password:
+            logging.warning(
+                "Skipping email: set SMTP_USER and SMTP_PASSWORD to enable notifications"
+            )
+            return
 
         msg = MIMEText(content)
         msg["Subject"] = subject
@@ -312,7 +323,10 @@ class ExperimentManager:
 def main():
     parser = argparse.ArgumentParser(description="Run multiple fine-tuning experiments")
     parser.add_argument(
-        "--email", type=str, required=True, help="Email for notifications"
+        "--email",
+        type=str,
+        default=None,
+        help="Optional address for progress emails (requires SMTP_USER and SMTP_PASSWORD env vars)",
     )
     args = parser.parse_args()
 
