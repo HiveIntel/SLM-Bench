@@ -25,7 +25,7 @@ RUN pip install --no-cache-dir torch==2.14.1 --index-url https://download.pytorc
     && pip install --no-cache-dir -r requirements.txt
 
 # Copy project files
-COPY train.py energy.py models.json datasets.json ./
+COPY train.py energy.py carbon.py models.json datasets.json ./
 
 # Run as an unprivileged user (train.py writes experiments.log to /app, so it
 # needs to own the directory). Replace the image's default "ubuntu" user, which

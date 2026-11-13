@@ -197,14 +197,51 @@ Caveats:
 
 ### CO2 and cost
 
-`train.py` converts the measured energy into kWh, CO2 and electricity cost using two fixed factors:
+For each phase, `train.py` turns the measured energy into CO2 and electricity cost:
 
-- `--carbon-intensity`: grid carbon intensity in gCO2/kWh. The default of 480 is roughly the world average; use your grid's figure (for example about 360–380 for Germany in recent years).
-- `--electricity-price`: price in USD per kWh. The default of 0.15 is a placeholder; use your own tariff.
+```
+system energy   = scope factor × measured energy + scope offset × duration
+facility energy = system energy × PUE
+CO2             = facility energy × grid carbon intensity during the phase
+```
 
-Each `train` and `eval` block gets `energy_kwh`, `co2_kg` and `cost_usd`, and `energy.experiment` holds the sum of both. The conversion uses the net energy (idle baseline subtracted), so the figures cover only what the experiment added. With `--idle-seconds 0` it uses the total energy instead. `energy.footprint_basis` records which one was used, and the factors are stored next to it so you can recompute the figures later. The log ends with the total footprint over all experiments.
+**Net and total.** Every figure comes in two versions. `net_*` uses the energy the experiment added on top of the idle baseline, which is its marginal cost. `total_*` also charges the idle power drawn while it ran, which is the attributional view used by most footprint tools. The scope offset cancels out of the net figures, because the idle baseline contains it too.
 
-These figures inherit the scope of the energy measurement (GPU only on DGX Spark) and use an average grid intensity, not the marginal one at the time of the run.
+**Scope.** The sensors miss part of the system (on DGX Spark they see only the GPU). To correct for this, plug the device into a wall-plug power meter and run:
+
+```bash
+python energy.py calibrate
+```
+
+It runs the GPU at four load levels, asks for the wall-meter reading at each, fits `wall = offset + factor × sensor`, and prints the `--scope-factor`, `--scope-offset-w` and `--scope-uncertainty` flags to use. Without calibration the factor is 1 and the offset 0, so the figures cover only what the sensor sees.
+
+**Grid carbon intensity.** By default this is a fixed `--carbon-intensity` (480 gCO2/kWh, roughly the world average). With `--carbon-zone` it uses the intensity for that place and time, averaged over each phase:
+
+| `--carbon-source` | Data | Notes |
+|---|---|---|
+| `energy-charts` (default with a zone) | Fraunhofer ISE [Energy-Charts](https://energy-charts.info), 15-minute values for European countries (`--carbon-zone DE`) | No API key. Actual values appear about two hours late; until then the forecast is used. |
+| `electricity-maps` | [Electricity Maps](https://www.electricitymaps.com), hourly lifecycle intensity for any zone | Needs `ELECTRICITYMAPS_API_KEY`. The free tier covers only the last 24 hours. |
+
+Any part of a phase the source can't cover (offline, too old, not yet published) falls back to the fixed value. Each phase records the intensity it used and its mix of `actual`, `estimated`, `forecast` and `fixed` data.
+
+**Uncertainty.** Each CO2 figure has `_low` and `_high` worst-case bounds combining:
+
+- sensor accuracy: ±5 W for NVML (NVIDIA's stated accuracy), and an assumed ±5 % for Jetson sensors
+- `--scope-uncertainty`: the calibration fit error
+- grid intensity, assumed to be ±10 % for actual data, ±15 % for estimates, ±20 % for forecasts and ±30 % for a fixed value; `--carbon-intensity-uncertainty` overrides this
+
+They are bounds, not a statistical confidence interval.
+
+**Other settings.** `--pue` adds data-centre overhead (default 1.0, right for a desk device; data centres are typically 1.1–1.6). `--electricity-price` sets the USD/kWh price for cost figures (default 0.15, a placeholder).
+
+**Recomputing.** All settings are stored in `energy.carbon` with each result, so the figures can be recomputed later without rerunning anything. Use this once actual grid data has replaced the forecast, or after calibrating the scope:
+
+```bash
+python carbon.py update experiment_results
+python carbon.py update experiment_results --scope-factor 1.9 --scope-offset-w 32 --scope-uncertainty 0.05
+```
+
+Flags given to `update` override the stored settings.
 
 Useful options:
 
@@ -215,8 +252,7 @@ Useful options:
 | `--batch-size`, `--epochs`, `--seed` | Training settings |
 | `--gpu-memory-fraction` | Caps this process's share of GPU memory on a shared GPU |
 | `--idle-seconds` | Length of the idle baseline window before each experiment (0 turns off baseline subtraction) |
-| `--carbon-intensity` | Grid carbon intensity in gCO2/kWh for CO2 estimates (default 480) |
-| `--electricity-price` | Electricity price in USD/kWh for cost estimates (default 0.15) |
+| `--carbon-zone`, `--carbon-source`, `--carbon-intensity`, `--pue`, `--scope-*`, `--electricity-price` | CO2 and cost settings (see above) |
 | `--no-energy` | Skips energy, CO2 and cost measurement |
 | `--results-dir` | Where results are written (default `experiment_results`) |
 
