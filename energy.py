@@ -46,6 +46,8 @@ class NvmlBackend:
         if self.energy_counter_j() is None:
             raise RuntimeError("NVML energy counter not supported")
         self.scope = "GPU"
+        # nvidia-smi documents NVML power as accurate to within +/- 5 W
+        self.power_uncertainty_w, self.power_uncertainty_rel = 5.0, 0.0
 
     def rails(self) -> Dict[str, float]:
         mw = ctypes.c_uint()
@@ -83,6 +85,8 @@ class JetsonBackend:
         labels = [label for label, _ in self.sensors]
         self.total_rail = next((r for r in TOTAL_RAILS if r in labels), None)
         self.scope = self.total_rail or "sum of " + ", ".join(labels)
+        # No published end-to-end accuracy for the module sensors; assume +/- 5 %
+        self.power_uncertainty_w, self.power_uncertainty_rel = 0.0, 0.05
 
     def rails(self) -> Dict[str, float]:
         return {label: read() for label, read in self.sensors}
@@ -124,6 +128,7 @@ class EnergyMeter:
         self._stop = threading.Event()
         self.counter_start = self.backend.energy_counter_j()
         self.t_start = time.perf_counter()
+        self.unix_start = time.time()  # wall clock, to look up grid carbon intensity
         self._thread = threading.Thread(target=self._sample_loop, daemon=True)
         self._thread.start()
         return self
@@ -155,6 +160,10 @@ class EnergyMeter:
         return {
             "backend": self.backend.name,
             "scope": self.backend.scope,
+            "power_uncertainty_w": self.backend.power_uncertainty_w,
+            "power_uncertainty_rel": self.backend.power_uncertainty_rel,
+            "start_unix": self.unix_start,
+            "end_unix": self.unix_start + duration,
             "duration_s": duration,
             "samples": len(self.samples),
             "total_energy_j": total,
@@ -182,11 +191,69 @@ def phase_metrics(report: Dict, idle_power_w: Optional[float], tokens: Optional[
     return metrics
 
 
-def footprint(energy_j: float, carbon_intensity_g_per_kwh: float, price_per_kwh: float) -> Dict:
-    """Convert energy to kWh, CO2 (kg) and electricity cost with fixed factors."""
-    kwh = energy_j / 3.6e6
-    return {
-        "energy_kwh": kwh,
-        "co2_kg": kwh * carbon_intensity_g_per_kwh / 1000.0,
-        "cost_usd": kwh * price_per_kwh,
-    }
+def _duty_cycle_load(fraction: float, stop: threading.Event, n: int = 4096):
+    # Busy for `fraction` of every 100 ms, so the GPU sits at a steady partial load
+    import torch
+
+    a = torch.randn(n, n, device="cuda", dtype=torch.bfloat16)
+    b = torch.randn_like(a)
+    while not stop.is_set():
+        busy_until = time.perf_counter() + 0.1 * fraction
+        while time.perf_counter() < busy_until:
+            a @ b
+            torch.cuda.synchronize()
+        stop.wait(0.1 * (1 - fraction))
+
+
+def calibrate(levels=(0.0, 0.33, 0.66, 1.0), settle_s: float = 20.0, measure_s: float = 60.0):
+    """Fit wall power = offset + factor x sensor power, against a wall-plug meter.
+
+    Runs a GPU load at each level, measures sensor power, and asks for the
+    wall-meter reading. Prints the --scope-* flags for train.py.
+    """
+    meter = EnergyMeter()
+    points = []
+    for level in levels:
+        stop = threading.Event()
+        load = None
+        if level > 0:
+            load = threading.Thread(target=_duty_cycle_load, args=(level, stop), daemon=True)
+            load.start()
+        print(f"Load {level:.0%}: settling {settle_s:g}s, then measuring {measure_s:g}s ...", flush=True)
+        time.sleep(settle_s)
+        with meter:
+            time.sleep(measure_s)
+        sensor_w = meter.report()["avg_power_w"]
+        wall_w = float(input(f"  sensor {sensor_w:.1f} W. Wall-meter reading now (W): "))
+        stop.set()
+        if load:
+            load.join()
+        points.append((sensor_w, wall_w))
+
+    n = len(points)
+    mean_s = sum(s for s, _ in points) / n
+    mean_w = sum(w for _, w in points) / n
+    var_s = sum((s - mean_s) ** 2 for s, _ in points)
+    factor = sum((s - mean_s) * (w - mean_w) for s, w in points) / var_s
+    offset = mean_w - factor * mean_s
+    worst = max(abs(offset + factor * s - w) / w for s, w in points)
+    print(f"\nwall = {offset:.1f} W + {factor:.3f} x sensor; worst fit error {worst:.1%}")
+    print(f"--scope-factor {factor:.3f} --scope-offset-w {offset:.1f} "
+          f"--scope-uncertainty {max(worst, 0.02):.2f}")
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Energy meter utilities")
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("probe", help="Show the detected backend and current power")
+    cal = sub.add_parser("calibrate", help="Fit sensor power to a wall-plug power meter")
+    cal.add_argument("--settle-seconds", type=float, default=20.0)
+    cal.add_argument("--measure-seconds", type=float, default=60.0)
+    args = parser.parse_args()
+    if args.command == "probe":
+        m = EnergyMeter()
+        print(m.backend.name, m.backend.scope, m.backend.rails())
+    else:
+        calibrate(settle_s=args.settle_seconds, measure_s=args.measure_seconds)
